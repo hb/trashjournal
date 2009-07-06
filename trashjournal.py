@@ -43,8 +43,10 @@ class TrashJournal():
         treeview.set_headers_visible(True)
         scrolledwin.add(treeview)
         selection_days = treeview.get_selection()
-        selection_days.set_mode(gtk.SELECTION_MULTIPLE)
+        selection_days.set_mode(gtk.SELECTION_SINGLE)
         selection_days.connect("changed", self._days_view_selection_changed_cb)
+        treeview.connect("button-press-event", self._days_view_button_pressed_cb);
+        self._days_view = treeview
         self._days_model = model
         
         # list for files
@@ -90,8 +92,7 @@ class TrashJournal():
         self.main_window.show()
         gtk.main()
 
-    def _files_view_button_pressed_cb(self, view, event):
-        if event.type == gtk.gdk.BUTTON_PRESS and event.button == 3:
+    def _fix_selection_after_button_press(self, view, event):
             # Figure out which item they right clicked on
             path = view.get_path_at_pos(int(event.x),int(event.y))
             selection = view.get_selection()
@@ -100,9 +101,26 @@ class TrashJournal():
             # If the right click was not on a currently selected row, change the selection
             if path[0] not in paths:
                 selection.unselect_all()
-                selection.select_path(path[0])
+                selection.select_path(path[0])        
+        
+    def _days_view_button_pressed_cb(self, view, event):
+        if event.type == gtk.gdk.BUTTON_PRESS and event.button == 3:
+            self._fix_selection_after_button_press(view, event)
+            self._days_view_popup_menu(event)
+            return True
+        
+    def _files_view_button_pressed_cb(self, view, event):
+        if event.type == gtk.gdk.BUTTON_PRESS and event.button == 3:
+            self._fix_selection_after_button_press(view, event)
             self._files_view_popup_menu(event)
             return True
+    def _days_view_popup_menu(self,event):
+        menu = gtk.Menu()
+        item = gtk.MenuItem(label="Do Something Else")
+        item.connect("activate", self._days_view_popup_do_something)
+        menu.append(item)
+        menu.show_all()
+        menu.popup(None, None, None, event.button, event.get_time())
         
     def _files_view_popup_menu(self, event):
         menu = gtk.Menu()
@@ -111,16 +129,31 @@ class TrashJournal():
         menu.append(item)
         menu.show_all()
         menu.popup(None, None, None, event.button, event.get_time())
-        
     
-    def _files_view_popup_do_something(self, item):
-        print 'Do Something cb!'
-        selection = self._files_view.get_selection()
+    def _get_fileinfo_list_from_file_view_selection(self, selection):
         (model, pathlist) = selection.get_selected_rows()
+        fileinfo_list = []
         for path in pathlist:
             iter = model.get_iter(path)
-            fileinfo = model.get_value(iter, 2)
-            print fileinfo
+            fileinfo_list.append(model.get_value(iter, 2))
+        return fileinfo_list
+    
+    def _get_fileinfo_list_from_days_view_selection(self, selection):
+        (model, pathlist) = selection.get_selected_rows()
+        fileinfo_list = []
+        for path in pathlist:
+            iter = model.get_iter(path)
+            days = model.get_value(iter, 1)
+            fileinfo_list.extend(self._trash_content[days])
+        return fileinfo_list
+            
+    def _files_view_popup_do_something(self, item):
+        fileinfos = self._get_fileinfo_list_from_file_view_selection(self._files_view.get_selection())
+        print fileinfos
+        
+    def _days_view_popup_do_something(self, item):
+        fileinfos = self._get_fileinfo_list_from_days_view_selection(self._days_view.get_selection())
+        print fileinfos
         
     def _days_view_selection_changed_cb(self, selection):
         """Days selection changed; build up file list to display"""
