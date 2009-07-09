@@ -180,8 +180,10 @@ class TrashJournal():
         # hash "days ago (int)" -> "gfile"
         # special key values:
         #  -1 : future
-        #  -2 : unknown (deletion date not set) 
+        #  -2 : unknown (deletion date not set)
+        #  -3 : all 
         self._days_hash = {}
+        self._days_hash[-3] = []
         today = datetime.date.today()
         for fileinfo in enumerator:
             child = self._get_child_gfile_from_fileinfo(fp, fileinfo)
@@ -202,8 +204,12 @@ class TrashJournal():
             if not days in self._days_hash:
                 self._days_hash[days] = []
             self._days_hash[days].append(child)
+            self._days_hash[-3].append(child)
         
         # transform hash into model
+        # first: all items
+        self._days_model.append(["All", -3])
+        # then: sorted by day
         keys = self._days_hash.keys()
         keys.sort()
         if not keys:
@@ -217,6 +223,8 @@ class TrashJournal():
                 period_string = "Today"
             elif days == 1:
                 period_string = "Yesterday"
+            elif days == -3:
+                continue # "All" handled above
             else:
                 period_string = str(days) + " days ago"
             
