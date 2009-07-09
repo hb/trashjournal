@@ -4,6 +4,7 @@ pygtk.require('2.0')
 import gtk
 import gio
 import gobject
+import gconf
 
 import datetime
 import subprocess
@@ -99,20 +100,26 @@ class TrashJournal():
 
         # register changed handler for trash
         fp = gio.File("trash://")
-        monitor = fp.monitor_directory()
-        monitor.connect("changed", self._trash_changed)
+        self._trash_monitor = fp.monitor_directory()
+        self._trash_monitor.connect("changed", self._trash_changed)
 
         # update trash
         self._update_trash_content()
-
-        # select first row in days view
-        iter = self._days_model.get_iter_first()
-        if iter:
-            selection_days.select_iter(iter)
+        self._select_standard_days_row()
 
         main_vbox.show_all()
         self.main_window.show()
-        gtk.main()
+
+    def _get_confirm_trash(self):
+        client = gconf.client_get_default()
+        return client.get_bool('/apps/nautilus/preferences/confirm_trash')
+        
+    def _select_standard_days_row(self):
+        iter = self._days_model.get_iter_first()
+        if iter:
+            selection = self._days_view.get_selection()
+            selection.select_iter(iter)
+        
 
     def _get_child_gfile_from_fileinfo(self, file, fileinfo):
         child = file.get_child(fileinfo.get_attribute_as_string("standard::name").decode('string_escape'))
@@ -126,6 +133,7 @@ class TrashJournal():
         
     def _update_trash_content(self):
         self._days_model.clear()
+        self._files_model.clear()
         fp = gio.File("trash://")
         enumerator = fp.enumerate_children("standard::name,standard::display-name,standard::type,trash::orig-path,trash::deletion-date")
         # hash "days ago (int)" -> "gfile"
@@ -219,6 +227,8 @@ class TrashJournal():
         
     def _trash_changed(self,filemonitor, file, other_file, event_type):
         print 'TODO: trash changed'
+        self._update_trash_content()
+        self._select_standard_days_row()
     
     
     def _fix_selection_after_button_press(self, view, event):
@@ -242,18 +252,61 @@ class TrashJournal():
 
     def _days_view_popup_menu(self,event):
         menu = gtk.Menu()
-        item = gtk.MenuItem(label="Do Something Else")
-        item.connect("activate", self._days_view_popup_do_something)
+        item = gtk.MenuItem(label="Delete permanently")
+        item.connect("activate", self._days_view_popup_delete)
         menu.append(item)
         menu.show_all()
         menu.popup(None, None, None, event.button, event.get_time())
 
-       
-    def _days_view_popup_do_something(self, item):
-        files = self._get_file_list_from_days_view_selection(self._days_view.get_selection())
-        print 'days popup do something'
-        print files
 
+    def _confirm_delete(self, files):
+        # check if confirmation is required
+        if not self._get_confirm_trash():
+            return True
+        
+        dialog = gtk.MessageDialog(self.main_window, 
+                                   gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_QUESTION, 
+                                   gtk.BUTTONS_NONE, self._get_deletion_confirmation_msg(files))
+        dialog.add_buttons(gtk.STOCK_CANCEL, 0, gtk.STOCK_DELETE, 1)
+        ret = dialog.run()
+        dialog.destroy()
+        return ret == 1
+       
+    def _get_deletion_confirmation_msg(self, files):
+        if len(files) == 1:
+            fileinfo = files[0].query_info("standard::display-name")
+            msg = ['Are you sure that you want to delete "',
+                   fileinfo.get_attribute_as_string("standard::display-name").decode('string_escape'),
+                   '" permanently from the trash?']
+        else:
+            msg = ["Are you sure that you want to delete the ",
+                   str(len(files)),
+                   " selected objects permanently from the trash?"]
+        msg.append("\n\nDirectories will be deleted including containing files and subdirectories.\n\nThis action cannot be undone.")
+        return "".join(msg)
+        
+    def _days_view_popup_delete(self, item):
+        self._delete_files_from_trash(self._get_file_list_from_days_view_selection(self._days_view.get_selection()))
+
+    def _delete_files_from_trash(self, files):
+        if self._confirm_delete(files):
+            errors = []
+            for file in files:
+                displayname = file.query_info("standard::display-name").get_attribute_as_string("standard::display-name").decode('string_escape')
+                try:
+                    file.delete()
+                except:
+                    errors.append(displayname)
+            if errors:
+                msg = ["The following files could not be deleted:\n"]
+                for error in errors:
+                    msg.append(error)
+                dialog = gtk.MessageDialog(self.main_window,
+                                           gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_ERROR,
+                                           gtk.BUTTONS_CLOSE, "".join(msg))
+                dialog.run()
+                dialog.destroy()
+            
     
     def _files_view_button_pressed_cb(self, view, event):
         if event.type == gtk.gdk.BUTTON_PRESS and event.button == 3:
@@ -264,17 +317,15 @@ class TrashJournal():
 
     def _files_view_popup_menu(self, event):
         menu = gtk.Menu()
-        item = gtk.MenuItem(label="Do Something")
-        item.connect("activate", self._files_view_popup_do_something)
+        item = gtk.MenuItem(label="Delete permanently")
+        item.connect("activate", self._files_view_popup_delete)
         menu.append(item)
         menu.show_all()
         menu.popup(None, None, None, event.button, event.get_time())
         
 
-    def _files_view_popup_do_something(self, item):
-        files = self._get_file_list_from_files_view_selection(self._files_view.get_selection())
-        print 'files popup do something'
-        print files
+    def _files_view_popup_delete(self, item):
+        self._delete_files_from_trash(self._get_file_list_from_files_view_selection(self._files_view.get_selection()))
 
     def _files_view_row_activated_cb(self, view, path, col):
         print 'TODO: files row activated'
@@ -310,3 +361,4 @@ class TrashJournal():
 
 if __name__ == "__main__":
     mainwin = TrashJournal()
+    gtk.main()
