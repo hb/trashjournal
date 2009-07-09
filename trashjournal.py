@@ -267,9 +267,9 @@ class TrashJournal():
  
         
     def _trash_changed(self,filemonitor, file, other_file, event_type):
-        print 'TODO: trash changed'
-        self._update_trash_content()
-        self._select_standard_days_row()
+        if event_type == gio.FILE_MONITOR_EVENT_CREATED or event_type == gio.FILE_MONITOR_EVENT_DELETED:
+            self._update_trash_content()
+            self._select_standard_days_row()
     
     
     def _fix_selection_after_button_press(self, view, event):
