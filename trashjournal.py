@@ -8,6 +8,8 @@ import gconf
 
 import datetime
 import subprocess
+import pickle
+import os.path
 
 class TrashJournal():
     """"A journal for the trash."""
@@ -24,8 +26,11 @@ class TrashJournal():
     FILES_MODEL_COLUMN_FORMER_PATH = 3
     
     def __init__(self):
+        self._config_file = os.path.expanduser('~') + '/.trashjournal'
+        
         # window
         self.main_window = gtk.Window(gtk.WINDOW_TOPLEVEL)
+        self.main_window.connect("delete_event", self._save_state)
         self.main_window.connect("destroy", gtk.main_quit)
         self.main_window.set_size_request(800,300)
         
@@ -35,6 +40,7 @@ class TrashJournal():
 
         # horizonal pane
         pane = gtk.HPaned()
+        self._pane_tree_views = pane
         main_vbox.pack_start(pane)
         
         # days list
@@ -107,8 +113,43 @@ class TrashJournal():
         self._update_trash_content()
         self._select_standard_days_row()
 
+        self._restore_state()
+        
         main_vbox.show_all()
         self.main_window.show()
+
+    def _get_current_window_state(self):
+        (pos_x, pos_y) = self.main_window.get_position()
+        (width, height) = self.main_window.get_size()
+        config = { 'pos_x' : pos_x, 'pos_y' : pos_y,
+                   'width': width, 'height': height}
+        return config
+        
+    def _restore_state(self):
+        config = self._get_current_window_state()
+        try:
+            fp = open(self._config_file, "r")
+        except IOError:
+            return
+        saved_config = pickle.load(fp)
+        fp.close()
+        for key in saved_config:
+            config[key] = saved_config[key]
+        self.main_window.move(config['pos_x'], config['pos_y'])
+        self.main_window.resize(config['width'], config['height'])
+        if 'pane_tree_views_position' in config:
+            self._pane_tree_views.set_position(config['pane_tree_views_position'])
+    
+    def _save_state(self, widget, event):
+        config = self._get_current_window_state()
+        config['pane_tree_views_position'] = self._pane_tree_views.get_position()
+        try:
+            fp = open(self._config_file, "w")
+            pickle.dump(config, fp)
+        except IOError:
+            print 'IOError: Could not save state.'
+        return False
+
 
     def _get_confirm_trash(self):
         client = gconf.client_get_default()
