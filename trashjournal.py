@@ -293,6 +293,9 @@ class TrashJournal():
 
     def _days_view_popup_menu(self,event):
         menu = gtk.Menu()
+        item = gtk.MenuItem(label="Restore")
+        item.connect("activate", self._days_view_popup_restore)
+        menu.append(item)
         item = gtk.MenuItem(label="Delete permanently")
         item.connect("activate", self._days_view_popup_delete)
         menu.append(item)
@@ -329,6 +332,38 @@ class TrashJournal():
     def _days_view_popup_delete(self, item):
         self._delete_files_from_trash(self._get_file_list_from_days_view_selection(self._days_view.get_selection()))
 
+    def _days_view_popup_restore(self, item):
+        self._restore_files(self._get_file_list_from_days_view_selection(self._days_view.get_selection()))
+
+    def _restore_progress_callback(self, num_bytes, total_num_bytes, data=None):
+        pass
+
+    def _restore_files(self, files):
+        unable = []
+        for file in files:
+            # hhb: TODO
+            orig_path =  file.query_info("trash::orig-path").get_attribute_as_string("trash::orig-path")
+            if orig_path:
+                orig_file = gio.File(orig_path)
+                print file
+                if not file.move(orig_file, self._restore_progress_callback, gio.FILE_COPY_BACKUP):
+                    unable.append(file)
+            else:
+                unable.append(file)
+        if unable:
+            if len(unable) > 1:
+                msg = ["Some files could not be restored."]
+            else:
+                msg = ['The file "',
+                       file.query_info("standard::display-name").get_attribute_as_string("standard::display-name").decode('string_escape'),
+                       '" could not be restored.']
+            dialog = gtk.MessageDialog(self.main_window,
+                                       gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_ERROR,
+                                       gtk.BUTTONS_CLOSE, "".join(msg))
+            dialog.run()
+            dialog.destroy()
+
+
     def _delete_files_from_trash(self, files):
         if self._confirm_delete(files):
             errors = []
@@ -358,6 +393,9 @@ class TrashJournal():
 
     def _files_view_popup_menu(self, event):
         menu = gtk.Menu()
+        item = gtk.MenuItem(label="Restore")
+        item.connect("activate", self._files_view_popup_restore)
+        menu.append(item)
         item = gtk.MenuItem(label="Delete permanently")
         item.connect("activate", self._files_view_popup_delete)
         menu.append(item)
@@ -368,6 +406,9 @@ class TrashJournal():
     def _files_view_popup_delete(self, item):
         self._delete_files_from_trash(self._get_file_list_from_files_view_selection(self._files_view.get_selection()))
 
+    def _files_view_popup_restore(self, item):
+        self._restore_files(self._get_file_list_from_files_view_selection(self._files_view.get_selection()))
+        
     def _files_view_row_activated_cb(self, view, path, col):
         print 'TODO: files row activated'
 
